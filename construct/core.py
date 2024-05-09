@@ -1057,9 +1057,8 @@ def Bitwise(subcon):
         >>> d.parse(b'\x01\x03')
         b'\x01\x00\x00\x00\x00\x00\x00\x00\x01\x01\x00\x00\x00\x00\x00\x00'
     """
-
     try:
-        size = subcon.sizeof()
+        size = subcon.sizeof(_bitwise = True)
         macro = Transformed(subcon, bytes2bits, size//8, bits2bytes, size//8)
     except SizeofError:
         macro = Restreamed(subcon, bytes2bits, 1, bits2bytes, 8, lambda n: n//8)
@@ -4026,6 +4025,8 @@ class Switch(Construct):
         super().__init__()
         self.keyfunc = keyfunc
         self.cases = cases
+        if isinstance(next(iter(cases), None), pyenum.Enum):
+            self.cases = {EnumIntegerString.new(k.value, k.name): v for k, v in self.cases.items() }
         self.default = default
         allcases = list(cases.values()) + [default]
         self.flagbuildnone = all(sc.flagbuildnone for sc in allcases)
@@ -4037,12 +4038,17 @@ class Switch(Construct):
 
     def _build(self, obj, stream, context, path):
         keyfunc = evaluate(self.keyfunc, context)
+        if isinstance(keyfunc, pyenum.Enum):
+            keyfunc = EnumIntegerString.new(keyfunc.value, keyfunc.name)
         sc = self.cases.get(keyfunc, self.default)
         return sc._build(obj, stream, context, path)
 
     def _sizeof(self, context, path):
         try:
-            keyfunc = evaluate(self.keyfunc, context)
+            ctx = context
+            if hasattr(ctx, '_subcons') and not hasattr(ctx._params, '_bitwise'):
+                ctx = ctx._subcons
+            keyfunc = evaluate(self.keyfunc, ctx)
             sc = self.cases.get(keyfunc, self.default)
             return sc._sizeof(context, path)
 
